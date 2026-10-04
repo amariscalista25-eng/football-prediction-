@@ -295,7 +295,7 @@ class _MatchPredictorScreenState extends State<MatchPredictorScreen> {
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               'Match Inputs (Past 5 Games)',
@@ -363,7 +363,7 @@ class _MatchPredictorScreenState extends State<MatchPredictorScreen> {
 
   Widget _buildSlider(String label, double value, double min, double max, ValueChanged<double> onChanged) {
     return Column(
-      crossAxisAlignment: CrossAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontSize: 13, color: Colors.grey)),
         Slider(
@@ -384,7 +384,7 @@ class _MatchPredictorScreenState extends State<MatchPredictorScreen> {
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -462,7 +462,7 @@ class _MatchPredictorScreenState extends State<MatchPredictorScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Column(
-            crossAxisAlignment: CrossAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(market, style: const TextStyle(fontSize: 12, color: Colors.grey)),
               Text(pick, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.tealAccent)),
