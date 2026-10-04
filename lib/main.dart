@@ -168,7 +168,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadLiveFixtures();
-    _saveAndCleanOldData();
   }
 
   // Fetch Live Fixtures from RapidAPI
@@ -217,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             isLiveApiUsed = true;
             isLoading = false;
           });
+          _saveAndCleanOldData();
           return;
         }
       }
@@ -256,23 +256,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ];
       isLoading = false;
     });
+    _saveAndCleanOldData();
   }
 
-  // 30-Day Auto Storage & Auto-Clean Engine
+  // 30-Day Rolling Storage Engine (First-In, First-Out)
   Future<void> _saveAndCleanOldData() async {
     final prefs = await SharedPreferences.getInstance();
     String? storedJson = prefs.getString('saved_predictions');
     List<dynamic> savedList = storedJson != null ? jsonDecode(storedJson) : [];
 
+    // Cutoff time: exactly 30 days ago from right now
     DateTime thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
 
+    // Keep ONLY predictions made within the last 30 days
+    // When day 31 arrives, day 1 is automatically filtered out here
     List<dynamic> updatedList = savedList.where((item) {
+      if (item['matchDate'] == null) return false;
       DateTime matchDate = DateTime.parse(item['matchDate']);
       return matchDate.isAfter(thirtyDaysAgo);
     }).toList();
 
+    // Add new matches into storage without duplicating IDs
     for (var m in allMatches) {
-      updatedList.add(m.toJson());
+      bool exists = updatedList.any((item) => item['id'] == m.id);
+      if (!exists) {
+        updatedList.add(m.toJson());
+      }
     }
 
     await prefs.setString('saved_predictions', jsonEncode(updatedList));
@@ -361,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
-              crossAxisAlignment: CrossAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -391,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   children: [
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(m.homeTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           Text('Form: ${m.homeForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
@@ -415,7 +424,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(m.awayTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           Text('Form: ${m.awayForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
@@ -494,12 +503,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         children: [
           const Icon(Icons.cleaning_services, size: 50, color: Color(0xFF10B981)),
           const SizedBox(height: 16),
-          const Text('30-DAY ROLLING MEMORY ACTIVE', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('30-DAY SLIDING LOG ACTIVE', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-              'Total predictions stored locally: $historyCount.\nMatches older than 30 days are automatically deleted at midnight.',
+              'Total saved predictions: $historyCount.\nMatches older than 30 days are continuously dropped to keep a rolling 30-day log window.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey, height: 1.4),
             ),
