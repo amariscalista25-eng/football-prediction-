@@ -44,6 +44,12 @@ class MatchPrediction {
   final String homeFormation;
   final String awayFormation;
   final DateTime matchDate;
+  
+  // Real-time Match Data
+  final String statusShort; // 'NS', '1H', 'HT', '2H', 'FT', etc.
+  final int? elapsedMinutes;
+  final int? actualHomeGoals;
+  final int? actualAwayGoals;
 
   late String predictedScore;
   late int homeWinProb;
@@ -66,6 +72,10 @@ class MatchPrediction {
     required this.homeFormation,
     required this.awayFormation,
     required this.matchDate,
+    required this.statusShort,
+    this.elapsedMinutes,
+    this.actualHomeGoals,
+    this.actualAwayGoals,
     required double homeAttack,
     required double homeDefense,
     required double awayAttack,
@@ -136,6 +146,29 @@ class MatchPrediction {
     }
   }
 
+  // Automatic Outcome Checker
+  bool? get isTipWon {
+    if (actualHomeGoals == null || actualAwayGoals == null) return null;
+    if (statusShort == 'NS') return null; // Not started yet
+
+    int h = actualHomeGoals!;
+    int a = actualAwayGoals!;
+    int totalGoals = h + a;
+
+    if (bestTip.contains('Home Win')) return h > a;
+    if (bestTip.contains('Away Win')) return a > h;
+    if (bestTip.contains('Draw (X)')) return h == a;
+    if (bestTip.contains('1X')) return h >= a;
+    if (bestTip.contains('Over 2.5')) return totalGoals > 2.5;
+    if (bestTip.contains('Under 3.5')) return totalGoals < 3.5;
+    if (bestTip.contains('Both Teams Score')) return h > 0 && a > 0;
+
+    return null;
+  }
+
+  bool get isLive => ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].contains(statusShort);
+  bool get isFinished => ['FT', 'AET', 'PEN'].contains(statusShort);
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'league': league,
@@ -145,6 +178,9 @@ class MatchPrediction {
         'bestTip': bestTip,
         'confidence': confidence,
         'matchDate': matchDate.toIso8601String(),
+        'actualHomeGoals': actualHomeGoals,
+        'actualAwayGoals': actualAwayGoals,
+        'statusShort': statusShort,
       };
 }
 
@@ -162,8 +198,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool isLiveApiUsed = false;
   String apiLog = 'Connecting to API-Sports...';
   int historyCount = 0;
-  
-  // Selected category filter
   String selectedFilter = 'ALL';
 
   @override
@@ -185,9 +219,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     try {
       final response = await http.get(
         url,
-        headers: {
-          'x-apisports-key': apiKey,
-        },
+        headers: {'x-apisports-key': apiKey},
       ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
@@ -200,8 +232,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             String home = item['teams']?['home']?['name'] ?? 'Home Team';
             String away = item['teams']?['away']?['name'] ?? 'Away Team';
             String league = item['league']?['name'] ?? 'World League';
-            
-            // Extract raw kickoff datetime from API
+
+            // Match Status & Live Score
+            String status = item['fixture']?['status']?['short'] ?? 'NS';
+            int? elapsed = item['fixture']?['status']?['elapsed'];
+            int? homeGoals = item['goals']?['home'];
+            int? awayGoals = item['goals']?['away'];
+
             String rawDateStr = item['fixture']?['date'] ?? '';
             DateTime matchDateTime = DateTime.tryParse(rawDateStr) ?? DateTime.now();
 
@@ -215,6 +252,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               homeFormation: '4-3-3',
               awayFormation: '4-2-3-1',
               matchDate: matchDateTime,
+              statusShort: status,
+              elapsedMinutes: elapsed,
+              actualHomeGoals: homeGoals,
+              actualAwayGoals: awayGoals,
               homeAttack: 1.1 + (Random().nextDouble() * 0.4),
               homeDefense: 0.6 + (Random().nextDouble() * 0.4),
               awayAttack: 1.0 + (Random().nextDouble() * 0.4),
@@ -251,22 +292,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         MatchPrediction(
           id: '1', league: 'Premier League', homeTeam: 'Arsenal', awayTeam: 'Chelsea',
           homeForm: 'W W W D W', awayForm: 'L W D L W', homeFormation: '4-3-3', awayFormation: '4-2-3-1',
-          matchDate: now.add(const Duration(hours: 2)), homeAttack: 1.35, homeDefense: 0.70, awayAttack: 1.05, awayDefense: 1.10,
+          matchDate: now.subtract(const Duration(minutes: 40)), statusShort: '1H', elapsedMinutes: 40,
+          actualHomeGoals: 2, actualAwayGoals: 0,
+          homeAttack: 1.35, homeDefense: 0.70, awayAttack: 1.05, awayDefense: 1.10,
         ),
         MatchPrediction(
           id: '2', league: 'Champions League', homeTeam: 'Real Madrid', awayTeam: 'Bayern Munich',
           homeForm: 'W W D W W', awayForm: 'W W L W D', homeFormation: '4-3-1-2', awayFormation: '4-2-3-1',
-          matchDate: now.add(const Duration(hours: 4)), homeAttack: 1.40, homeDefense: 0.80, awayAttack: 1.30, awayDefense: 0.85,
+          matchDate: now.subtract(const Duration(hours: 3)), statusShort: 'FT',
+          actualHomeGoals: 3, actualAwayGoals: 1,
+          homeAttack: 1.40, homeDefense: 0.80, awayAttack: 1.30, awayDefense: 0.85,
         ),
         MatchPrediction(
           id: '3', league: 'La Liga', homeTeam: 'Barcelona', awayTeam: 'Sevilla',
           homeForm: 'W W W L W', awayForm: 'D L W L D', homeFormation: '4-3-3', awayFormation: '5-3-2',
-          matchDate: now.add(const Duration(hours: 6)), homeAttack: 1.38, homeDefense: 0.75, awayAttack: 0.85, awayDefense: 1.20,
-        ),
-        MatchPrediction(
-          id: '4', league: 'NPFL Nigeria', homeTeam: 'Enyimba', awayTeam: 'Kano Pillars',
-          homeForm: 'W D W W L', awayForm: 'L D L W D', homeFormation: '4-4-2', awayFormation: '4-5-1',
-          matchDate: now.add(const Duration(hours: 3)), homeAttack: 1.20, homeDefense: 0.65, awayAttack: 0.80, awayDefense: 1.15,
+          matchDate: now.add(const Duration(hours: 2)), statusShort: 'NS',
+          homeAttack: 1.38, homeDefense: 0.75, awayAttack: 0.85, awayDefense: 1.20,
         ),
       ];
       isLoading = false;
@@ -301,7 +342,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
-  // Formatting Date & Time for display
   String _formatMatchTime(DateTime dt) {
     final local = dt.toLocal();
     final hour = local.hour.toString().padLeft(2, '0');
@@ -449,6 +489,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   itemCount: filteredList.length,
                   itemBuilder: (context, index) {
                     final m = filteredList[index];
+                    final tipWon = m.isTipWon;
+
                     return Card(
                       margin: const EdgeInsets.only(bottom: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -457,7 +499,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Card Top Bar: League, Time, Confidence Badge
+                            // Card Top Bar: League, Status, Confidence Badge
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -473,11 +515,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                       const SizedBox(height: 2),
                                       Row(
                                         children: [
-                                          const Icon(Icons.access_time, size: 12, color: Color(0xFF06B6D4)),
-                                          const SizedBox(width: 4),
+                                          _buildMatchStatusBadge(m),
+                                          const SizedBox(width: 6),
                                           Text(
                                             _formatMatchTime(m.matchDate),
-                                            style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.w600),
+                                            style: const TextStyle(color: Colors.grey, fontSize: 10),
                                           ),
                                         ],
                                       ),
@@ -503,7 +545,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             ),
                             const SizedBox(height: 12),
 
-                            // Team Names and Predicted Score
+                            // Teams, Live Score, and Predicted Score
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -511,61 +553,82 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(m.homeTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      Text(m.homeTeam, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                                       Text('Form: ${m.homeForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                                      Text('Formation: ${m.homeFormation}', style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 10)),
                                     ],
                                   ),
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF0F172A),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFF10B981), width: 1.5),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      const Text('PREDICTED', style: TextStyle(color: Colors.grey, fontSize: 9, fontWeight: FontWeight.bold)),
-                                      Text(m.predictedScore, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+
+                                // Score Display (Live/Final vs Predicted)
+                                Column(
+                                  children: [
+                                    if (m.isLive || m.isFinished) ...[
+                                      Text(
+                                        '${m.actualHomeGoals ?? 0} - ${m.actualAwayGoals ?? 0}',
+                                        style: TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.bold,
+                                          color: m.isLive ? Colors.redAccent : Colors.white,
+                                        ),
+                                      ),
+                                      Text(
+                                        m.isLive ? 'LIVE SCORE' : 'FINAL SCORE',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: m.isLive ? Colors.redAccent : Colors.grey,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
                                     ],
-                                  ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F172A),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFF10B981), width: 1),
+                                      ),
+                                      child: Text(
+                                        'PRED: ${m.predictedScore}',
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                      ),
+                                    ),
+                                  ],
                                 ),
+
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
-                                      Text(m.awayTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      Text(m.awayTeam, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                                       Text('Form: ${m.awayForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                                      Text('Formation: ${m.awayFormation}', style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 10)),
                                     ],
                                   ),
                                 ),
                               ],
                             ),
 
-                            const Divider(height: 24, color: Colors.white10),
+                            const Divider(height: 20, color: Colors.white10),
 
-                            // Probabilities Bar
-                            Row(
-                              children: [
-                                Expanded(child: _probBadge('1 (${m.homeTeam})', '${m.homeWinProb}%', m.homeWinProb >= 50)),
-                                const SizedBox(width: 6),
-                                Expanded(child: _probBadge('X (Draw)', '${m.drawProb}%', false)),
-                                const SizedBox(width: 6),
-                                Expanded(child: _probBadge('2 (${m.awayTeam})', '${m.awayWinProb}%', m.awayWinProb >= 50)),
-                              ],
-                            ),
-
-                            const SizedBox(height: 12),
-
-                            // Tip Footer
+                            // Tip Footer with WON / FAILED status icons
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A),
+                                color: tipWon == true
+                                    ? Colors.green.withOpacity(0.15)
+                                    : tipWon == false
+                                        ? Colors.red.withOpacity(0.15)
+                                        : const Color(0xFF0F172A),
                                 borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: tipWon == true
+                                      ? const Color(0xFF10B981)
+                                      : tipWon == false
+                                          ? Colors.redAccent
+                                          : Colors.transparent,
+                                  width: 1,
+                                ),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -577,7 +640,26 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                       Text('TIP: ${m.bestTip}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                     ],
                                   ),
-                                  Text('xG: ${m.homeXG} - ${m.awayXG}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+
+                                  // Checkmark / Cancel Icon Status
+                                  if (tipWon == true)
+                                    Row(
+                                      children: const [
+                                        Icon(Icons.check_circle, color: Color(0xFF10B981), size: 18),
+                                        SizedBox(width: 4),
+                                        Text('WON', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 12)),
+                                      ],
+                                    )
+                                  else if (tipWon == false)
+                                    Row(
+                                      children: const [
+                                        Icon(Icons.cancel, color: Colors.redAccent, size: 18),
+                                        SizedBox(width: 4),
+                                        Text('FAILED', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                                      ],
+                                    )
+                                  else
+                                    Text('xG: ${m.homeXG} - ${m.awayXG}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
                                 ],
                               ),
                             ),
@@ -590,6 +672,37 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       ],
     );
+  }
+
+  Widget _buildMatchStatusBadge(MatchPrediction m) {
+    if (m.isLive) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: Colors.red.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+        child: Row(
+          children: [
+            const Icon(Icons.circle, color: Colors.redAccent, size: 8),
+            const SizedBox(width: 4),
+            Text(
+              m.elapsedMinutes != null ? '${m.elapsedMinutes}\'' : m.statusShort,
+              style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10),
+            ),
+          ],
+        ),
+      );
+    } else if (m.isFinished) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: Colors.grey.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+        child: Text('FT', style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 10)),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: const Color(0xFF06B6D4).withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+        child: const Text('NS', style: TextStyle(color: Color(0xFF06B6D4), fontWeight: FontWeight.bold, fontSize: 10)),
+      );
+    }
   }
 
   Widget _filterChip(List<MatchPrediction> sourceList, String filterKey, String displayLabel) {
@@ -615,24 +728,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             });
           }
         },
-      ),
-    );
-  }
-
-  Widget _probBadge(String label, String prob, bool isHighlight) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: isHighlight ? const Color(0xFF10B981).withOpacity(0.2) : Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isHighlight ? const Color(0xFF10B981) : Colors.transparent),
-      ),
-      child: Column(
-        children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey), overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 2),
-          Text(prob, style: TextStyle(fontWeight: FontWeight.bold, color: isHighlight ? const Color(0xFF10B981) : Colors.white)),
-        ],
       ),
     );
   }
