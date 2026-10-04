@@ -44,7 +44,7 @@ class MatchPrediction {
   final String homeFormation;
   final String awayFormation;
   final DateTime matchDate;
-  
+
   // Real-time Match Data
   final String statusShort; // 'NS', '1H', 'HT', '2H', 'FT', etc.
   final int? elapsedMinutes;
@@ -55,8 +55,13 @@ class MatchPrediction {
   late int homeWinProb;
   late int drawProb;
   late int awayWinProb;
+  late int over15Prob;
   late int over25Prob;
-  late int bttsProb;
+  late int under25Prob;
+  late int under35Prob;
+  late int under45Prob;
+  late int bttsYesProb;
+  late int bttsNoProb;
   late String bestTip;
   late int confidence;
   late String homeXG;
@@ -91,27 +96,35 @@ class MatchPrediction {
     homeXG = baseHomeXG.toStringAsFixed(2);
     awayXG = baseAwayXG.toStringAsFixed(2);
 
-    double hWin = 0, draw = 0, aWin = 0, over25 = 0, btts = 0;
+    double hWin = 0, draw = 0, aWin = 0;
+    double over15 = 0, over25 = 0, under25 = 0, under35 = 0, under45 = 0;
+    double bttsYes = 0;
     int bestH = 0, bestA = 0;
-    double maxProb = 0;
+    double maxScoreProb = 0;
 
     double poisson(int k, double lambda) {
       double factorial(int n) => n <= 1 ? 1 : n * factorial(n - 1);
       return (pow(lambda, k) * exp(-lambda)) / factorial(k);
     }
 
-    for (int h = 0; h <= 5; h++) {
-      for (int a = 0; a <= 5; a++) {
+    // Compute Poisson probability matrix up to 6-6 scoreline
+    for (int h = 0; h <= 6; h++) {
+      for (int a = 0; a <= 6; a++) {
         double p = poisson(h, baseHomeXG) * poisson(a, baseAwayXG);
+
         if (h > a) hWin += p;
         else if (h == a) draw += p;
         else aWin += p;
 
+        if (h + a > 1.5) over15 += p;
         if (h + a > 2.5) over25 += p;
-        if (h > 0 && a > 0) btts += p;
+        if (h + a < 2.5) under25 += p;
+        if (h + a < 3.5) under35 += p;
+        if (h + a < 4.5) under45 += p;
+        if (h > 0 && a > 0) bttsYes += p;
 
-        if (p > maxProb) {
-          maxProb = p;
+        if (p > maxScoreProb) {
+          maxScoreProb = p;
           bestH = h;
           bestA = a;
         }
@@ -119,37 +132,69 @@ class MatchPrediction {
     }
 
     predictedScore = '$bestH - $bestA';
+
     homeWinProb = (hWin * 100).round();
     drawProb = (draw * 100).round();
     awayWinProb = (aWin * 100).round();
-    over25Prob = (over25 * 100).round();
-    bttsProb = (btts * 100).round();
 
-    if (homeWinProb >= 65) {
+    over15Prob = (over15 * 100).round();
+    over25Prob = (over25 * 100).round();
+    under25Prob = (under25 * 100).round();
+    under35Prob = (under35 * 100).round();
+    under45Prob = (under45 * 100).round();
+
+    bttsYesProb = (bttsYes * 100).round();
+    bttsNoProb = 100 - bttsYesProb;
+
+    int dc1X = homeWinProb + drawProb;
+    int dcX2 = awayWinProb + drawProb;
+    int dc12 = homeWinProb + awayWinProb;
+
+    // Map of all candidate market probabilities for systematic evaluation
+    Map<String, int> allMarkets = {
+      'Home Win (1)': homeWinProb,
+      'Away Win (2)': awayWinProb,
+      'Draw (X)': drawProb,
+      '1X (Home or Draw)': dc1X,
+      'X2 (Draw or Away)': dcX2,
+      '12 (Home or Away)': dc12,
+      'Over 1.5 Goals': over15Prob,
+      'Over 2.5 Goals': over25Prob,
+      'Under 2.5 Goals': under25Prob,
+      'Under 3.5 Goals': under35Prob,
+      'Under 4.5 Goals': under45Prob,
+      'BTTS (Yes)': bttsYesProb,
+      'BTTS (No)': bttsNoProb,
+    };
+
+    // If 1X2 market shows strong dominance (>= 75%), keep direct win market.
+    if (homeWinProb >= 75) {
       bestTip = 'Home Win (1)';
       confidence = homeWinProb;
-    } else if (awayWinProb >= 65) {
+    } else if (awayWinProb >= 75) {
       bestTip = 'Away Win (2)';
       confidence = awayWinProb;
-    } else if (over25Prob >= 68) {
-      bestTip = 'Over 2.5 Goals';
-      confidence = over25Prob;
-    } else if (bttsProb >= 68) {
-      bestTip = 'Both Teams Score (Yes)';
-      confidence = bttsProb;
-    } else if (homeWinProb + drawProb >= 78) {
-      bestTip = '1X (Home or Draw)';
-      confidence = homeWinProb + drawProb;
     } else {
-      bestTip = 'Under 3.5 Goals';
-      confidence = 72;
+      // Otherwise find the absolute highest probability market across all calculations
+      String selectedMarket = '1X (Home or Draw)';
+      int highestProb = 0;
+
+      allMarkets.forEach((market, prob) {
+        if (prob > highestProb) {
+          highestProb = prob;
+          selectedMarket = market;
+        }
+      });
+
+      bestTip = selectedMarket;
+      confidence = highestProb;
     }
   }
 
-  // Automatic Outcome Checker
+  // Outcome verifier supporting 1, X, 2, 1X, X2, 12, Over/Under 1.5-4.5, BTTS Yes/No
   bool? get isTipWon {
     if (actualHomeGoals == null || actualAwayGoals == null) return null;
-    if (statusShort == 'NS') return null; // Not started yet
+    if (statusShort == 'NS') return null;
 
     int h = actualHomeGoals!;
     int a = actualAwayGoals!;
@@ -159,9 +204,15 @@ class MatchPrediction {
     if (bestTip.contains('Away Win')) return a > h;
     if (bestTip.contains('Draw (X)')) return h == a;
     if (bestTip.contains('1X')) return h >= a;
+    if (bestTip.contains('X2')) return a >= h;
+    if (bestTip.contains('12')) return h != a;
+    if (bestTip.contains('Over 1.5')) return totalGoals > 1.5;
     if (bestTip.contains('Over 2.5')) return totalGoals > 2.5;
+    if (bestTip.contains('Under 2.5')) return totalGoals < 2.5;
     if (bestTip.contains('Under 3.5')) return totalGoals < 3.5;
-    if (bestTip.contains('Both Teams Score')) return h > 0 && a > 0;
+    if (bestTip.contains('Under 4.5')) return totalGoals < 4.5;
+    if (bestTip.contains('BTTS (Yes)')) return h > 0 && a > 0;
+    if (bestTip.contains('BTTS (No)')) return h == 0 || a == 0;
 
     return null;
   }
@@ -233,7 +284,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             String away = item['teams']?['away']?['name'] ?? 'Away Team';
             String league = item['league']?['name'] ?? 'World League';
 
-            // Match Status & Live Score
             String status = item['fixture']?['status']?['short'] ?? 'NS';
             int? elapsed = item['fixture']?['status']?['elapsed'];
             int? homeGoals = item['goals']?['home'];
@@ -256,10 +306,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               elapsedMinutes: elapsed,
               actualHomeGoals: homeGoals,
               actualAwayGoals: awayGoals,
-              homeAttack: 1.1 + (Random().nextDouble() * 0.4),
-              homeDefense: 0.6 + (Random().nextDouble() * 0.4),
-              awayAttack: 1.0 + (Random().nextDouble() * 0.4),
-              awayDefense: 0.7 + (Random().nextDouble() * 0.4),
+              homeAttack: 0.6 + (Random().nextDouble() * 1.0),
+              homeDefense: 0.4 + (Random().nextDouble() * 0.9),
+              awayAttack: 0.6 + (Random().nextDouble() * 1.0),
+              awayDefense: 0.4 + (Random().nextDouble() * 0.9),
             ));
           }
 
@@ -294,7 +344,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           homeForm: 'W W W D W', awayForm: 'L W D L W', homeFormation: '4-3-3', awayFormation: '4-2-3-1',
           matchDate: now.subtract(const Duration(minutes: 40)), statusShort: '1H', elapsedMinutes: 40,
           actualHomeGoals: 2, actualAwayGoals: 0,
-          homeAttack: 1.35, homeDefense: 0.70, awayAttack: 1.05, awayDefense: 1.10,
+          homeAttack: 1.50, homeDefense: 0.50, awayAttack: 0.80, awayDefense: 1.30,
         ),
         MatchPrediction(
           id: '2', league: 'Champions League', homeTeam: 'Real Madrid', awayTeam: 'Bayern Munich',
@@ -307,7 +357,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           id: '3', league: 'La Liga', homeTeam: 'Barcelona', awayTeam: 'Sevilla',
           homeForm: 'W W W L W', awayForm: 'D L W L D', homeFormation: '4-3-3', awayFormation: '5-3-2',
           matchDate: now.add(const Duration(hours: 2)), statusShort: 'NS',
-          homeAttack: 1.38, homeDefense: 0.75, awayAttack: 0.85, awayDefense: 1.20,
+          homeAttack: 0.70, homeDefense: 1.10, awayAttack: 1.40, awayDefense: 0.70,
+        ),
+        MatchPrediction(
+          id: '4', league: 'Serie A', homeTeam: 'Genoa', awayTeam: 'Torino',
+          homeForm: 'D D L D L', awayForm: 'D L D W D', homeFormation: '3-5-2', awayFormation: '3-4-2-1',
+          matchDate: now.add(const Duration(hours: 4)), statusShort: 'NS',
+          homeAttack: 0.55, homeDefense: 0.50, awayAttack: 0.50, awayDefense: 0.55,
         ),
       ];
       isLoading = false;
@@ -362,9 +418,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       } else if (filter == 'OVER/UNDER') {
         return tip.contains('Over') || tip.contains('Under');
       } else if (filter == 'DOUBLE CHANCE') {
-        return tip.contains('1X') || tip.contains('X2') || tip.contains('Double');
+        return tip.contains('1X') || tip.contains('X2') || tip.contains('12');
       } else if (filter == 'BTTS') {
-        return tip.contains('Both Teams');
+        return tip.contains('BTTS');
       }
       return true;
     }).toList();
@@ -376,7 +432,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    List<MatchPrediction> highConfidence = allMatches.where((m) => m.confidence >= 80).toList();
+    List<MatchPrediction> highConfidence = allMatches.where((m) => m.confidence >= 85).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -421,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           unselectedLabelColor: Colors.grey,
           tabs: [
             Tab(text: "TODAY (${allMatches.length})"),
-            Tab(text: "HIGH CONF (${highConfidence.length})"),
+            Tab(text: "85%+ CONF (${highConfidence.length})"),
             Tab(text: "30-DAY LOG ($historyCount)"),
           ],
         ),
@@ -460,7 +516,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     return Column(
       children: [
-        // Category Filter Row
         Container(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
           color: const Color(0xFF1E293B).withOpacity(0.5),
@@ -477,8 +532,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
         ),
-
-        // Matches List
         Expanded(
           child: filteredList.isEmpty
               ? Center(
@@ -499,7 +552,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Card Top Bar: League, Status, Confidence Badge
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -529,13 +581,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: m.confidence >= 80 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                                    color: m.confidence >= 85 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
                                     '${m.confidence}% CONFIDENCE',
                                     style: TextStyle(
-                                      color: m.confidence >= 80 ? const Color(0xFF10B981) : Colors.orange,
+                                      color: m.confidence >= 85 ? const Color(0xFF10B981) : Colors.orange,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 10,
                                     ),
@@ -544,8 +596,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               ],
                             ),
                             const SizedBox(height: 12),
-
-                            // Teams, Live Score, and Predicted Score
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -558,8 +608,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                     ],
                                   ),
                                 ),
-
-                                // Score Display (Live/Final vs Predicted)
                                 Column(
                                   children: [
                                     if (m.isLive || m.isFinished) ...[
@@ -595,7 +643,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                     ),
                                   ],
                                 ),
-
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -607,10 +654,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                 ),
                               ],
                             ),
-
                             const Divider(height: 20, color: Colors.white10),
-
-                            // Tip Footer with WON / FAILED status icons
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(10),
@@ -640,8 +684,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                       Text('TIP: ${m.bestTip}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                     ],
                                   ),
-
-                                  // Checkmark / Cancel Icon Status
                                   if (tipWon == true)
                                     Row(
                                       children: const [
@@ -694,7 +736,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(color: Colors.grey.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
-        child: Text('FT', style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 10)),
+        child: const Text('FT', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 10)),
       );
     } else {
       return Container(
