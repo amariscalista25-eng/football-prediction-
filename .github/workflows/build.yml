@@ -1,0 +1,49 @@
+name: Build Flutter APK
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.5'
+          channel: 'stable'
+
+      - name: Create Clean Flutter Project Scaffold & Patch SDK
+        run: |
+          flutter create temp_app --org com.scrap.tracker --project-name masky_football_predition
+          cp -r lib/* temp_app/lib/
+          cp pubspec.yaml temp_app/pubspec.yaml
+          
+          # Patch build.gradle to satisfy SDK 34 requirements for shared_preferences
+          BUILD_FILE="temp_app/android/app/build.gradle"
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' $BUILD_FILE
+          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 34/g' $BUILD_FILE
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/g' $BUILD_FILE
+          
+          cd temp_app
+          flutter pub get
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk ../app-release.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app-release.apk
+          
