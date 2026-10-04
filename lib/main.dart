@@ -200,6 +200,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             String home = item['teams']?['home']?['name'] ?? 'Home Team';
             String away = item['teams']?['away']?['name'] ?? 'Away Team';
             String league = item['league']?['name'] ?? 'World League';
+            
+            // Extract raw kickoff datetime from API
+            String rawDateStr = item['fixture']?['date'] ?? '';
+            DateTime matchDateTime = DateTime.tryParse(rawDateStr) ?? DateTime.now();
 
             parsedMatches.add(MatchPrediction(
               id: item['fixture']?['id']?.toString() ?? Random().nextInt(99999).toString(),
@@ -210,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               awayForm: 'D W L W W',
               homeFormation: '4-3-3',
               awayFormation: '4-2-3-1',
-              matchDate: DateTime.now(),
+              matchDate: matchDateTime,
               homeAttack: 1.1 + (Random().nextDouble() * 0.4),
               homeDefense: 0.6 + (Random().nextDouble() * 0.4),
               awayAttack: 1.0 + (Random().nextDouble() * 0.4),
@@ -247,22 +251,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         MatchPrediction(
           id: '1', league: 'Premier League', homeTeam: 'Arsenal', awayTeam: 'Chelsea',
           homeForm: 'W W W D W', awayForm: 'L W D L W', homeFormation: '4-3-3', awayFormation: '4-2-3-1',
-          matchDate: now, homeAttack: 1.35, homeDefense: 0.70, awayAttack: 1.05, awayDefense: 1.10,
+          matchDate: now.add(const Duration(hours: 2)), homeAttack: 1.35, homeDefense: 0.70, awayAttack: 1.05, awayDefense: 1.10,
         ),
         MatchPrediction(
           id: '2', league: 'Champions League', homeTeam: 'Real Madrid', awayTeam: 'Bayern Munich',
           homeForm: 'W W D W W', awayForm: 'W W L W D', homeFormation: '4-3-1-2', awayFormation: '4-2-3-1',
-          matchDate: now, homeAttack: 1.40, homeDefense: 0.80, awayAttack: 1.30, awayDefense: 0.85,
+          matchDate: now.add(const Duration(hours: 4)), homeAttack: 1.40, homeDefense: 0.80, awayAttack: 1.30, awayDefense: 0.85,
         ),
         MatchPrediction(
           id: '3', league: 'La Liga', homeTeam: 'Barcelona', awayTeam: 'Sevilla',
           homeForm: 'W W W L W', awayForm: 'D L W L D', homeFormation: '4-3-3', awayFormation: '5-3-2',
-          matchDate: now, homeAttack: 1.38, homeDefense: 0.75, awayAttack: 0.85, awayDefense: 1.20,
+          matchDate: now.add(const Duration(hours: 6)), homeAttack: 1.38, homeDefense: 0.75, awayAttack: 0.85, awayDefense: 1.20,
         ),
         MatchPrediction(
           id: '4', league: 'NPFL Nigeria', homeTeam: 'Enyimba', awayTeam: 'Kano Pillars',
           homeForm: 'W D W W L', awayForm: 'L D L W D', homeFormation: '4-4-2', awayFormation: '4-5-1',
-          matchDate: now, homeAttack: 1.20, homeDefense: 0.65, awayAttack: 0.80, awayDefense: 1.15,
+          matchDate: now.add(const Duration(hours: 3)), homeAttack: 1.20, homeDefense: 0.65, awayAttack: 0.80, awayDefense: 1.15,
         ),
       ];
       isLoading = false;
@@ -297,7 +301,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
-  // Filter List Evaluator
+  // Formatting Date & Time for display
+  String _formatMatchTime(DateTime dt) {
+    final local = dt.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final month = months[local.month - 1];
+    return '$day $month • $hour:$minute';
+  }
+
   List<MatchPrediction> _applyFilter(List<MatchPrediction> sourceList, String filter) {
     if (filter == 'ALL') return sourceList;
 
@@ -443,12 +457,35 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Card Top Bar: League, Time, Confidence Badge
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(m.league.toUpperCase(), style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold)),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        m.league.toUpperCase(),
+                                        style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.access_time, size: 12, color: Color(0xFF06B6D4)),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _formatMatchTime(m.matchDate),
+                                            style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.w600),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: m.confidence >= 80 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
                                     borderRadius: BorderRadius.circular(6),
@@ -466,6 +503,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             ),
                             const SizedBox(height: 12),
 
+                            // Team Names and Predicted Score
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -508,6 +546,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
                             const Divider(height: 24, color: Colors.white10),
 
+                            // Probabilities Bar
                             Row(
                               children: [
                                 Expanded(child: _probBadge('1 (${m.homeTeam})', '${m.homeWinProb}%', m.homeWinProb >= 50)),
@@ -520,6 +559,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
                             const SizedBox(height: 12),
 
+                            // Tip Footer
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(10),
