@@ -36,6 +36,10 @@ jobs:
           sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 34/g' $BUILD_FILE
           sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/g' $BUILD_FILE
           
+          # Inject Internet Permission into AndroidManifest.xml
+          MANIFEST_FILE="temp_app/android/app/src/main/AndroidManifest.xml"
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' $MANIFEST_FILE
+          
           cd temp_app
           flutter pub get
           flutter build apk --release
