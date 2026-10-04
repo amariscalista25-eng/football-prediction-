@@ -550,7 +550,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    List<MatchPrediction> highConfidence = allMatches.where((m) => m.confidence >= 60).toList();
+    List<MatchPrediction> highConfidence = allMatches.where((m) => m.confidence >= 86).toList();
 
     return Scaffold(
       appBar: AppBar(
