@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Your RapidAPI Credentials
-const String apiHost = 'api-football186.p.rapidapi.com';
-const String apiKey = '6b2d891f06mshad51f84c743fa03p190f1bjsnf5c96ceeea1a';
+// Direct API-Sports Configuration
+const String apiBaseUrl = 'https://v3.football.api-sports.io';
+const String apiKey = '3fdb933a3d517134be158aaaff8b0b24';
 
 void main() {
   runApp(const FootballPredictorApp());
@@ -34,7 +34,6 @@ class FootballPredictorApp extends StatelessWidget {
   }
 }
 
-// Prediction Model driven by Poisson Distribution Math
 class MatchPrediction {
   final String id;
   final String league;
@@ -161,6 +160,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<MatchPrediction> allMatches = [];
   bool isLoading = true;
   bool isLiveApiUsed = false;
+  String apiLog = 'Connecting to API-Sports...';
   int historyCount = 0;
 
   @override
@@ -170,92 +170,69 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _loadLiveFixtures();
   }
 
-  // Enhanced multi-endpoint Live API Loader
   Future<void> _loadLiveFixtures() async {
-    setState(() => isLoading = true);
+    setState(() {
+      isLoading = true;
+      apiLog = 'Connecting to API-Sports...';
+    });
 
-    final todayDate = DateTime.now().toString().split(' ')[0]; // YYYY-MM-DD
-    
-    // List of endpoints to try on RapidAPI
-    final endpoints = [
-      'https://$apiHost/matches?date=$todayDate',
-      'https://$apiHost/fixtures?date=$todayDate',
-      'https://$apiHost/matches',
-    ];
+    final todayDate = DateTime.now().toIso8601String().split('T')[0];
+    final Uri url = Uri.parse('$apiBaseUrl/fixtures?date=$todayDate');
 
-    for (String urlStr in endpoints) {
-      try {
-        final response = await http.get(
-          Uri.parse(urlStr),
-          headers: {
-            'x-rapidapi-key': apiKey,
-            'x-rapidapi-host': apiHost,
-            'x-api-key': apiKey,
-            'x-api-host': apiHost,
-          },
-        ).timeout(const Duration(seconds: 8));
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'x-apisports-key': apiKey,
+        },
+      ).timeout(const Duration(seconds: 10));
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          
-          // Universal extractor for different JSON schemas
-          List<dynamic> apiList = [];
-          if (data is List) {
-            apiList = data;
-          } else if (data is Map) {
-            apiList = data['data'] ?? data['response'] ?? data['matches'] ?? data['result'] ?? [];
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        List<dynamic> apiList = data['response'] ?? [];
+
+        if (apiList.isNotEmpty) {
+          List<MatchPrediction> parsedMatches = [];
+          for (var item in apiList) {
+            String home = item['teams']?['home']?['name'] ?? 'Home Team';
+            String away = item['teams']?['away']?['name'] ?? 'Away Team';
+            String league = item['league']?['name'] ?? 'World League';
+
+            parsedMatches.add(MatchPrediction(
+              id: item['fixture']?['id']?.toString() ?? Random().nextInt(99999).toString(),
+              league: league,
+              homeTeam: home,
+              awayTeam: away,
+              homeForm: 'W W D W L',
+              awayForm: 'D W L W W',
+              homeFormation: '4-3-3',
+              awayFormation: '4-2-3-1',
+              matchDate: DateTime.now(),
+              homeAttack: 1.1 + (Random().nextDouble() * 0.4),
+              homeDefense: 0.6 + (Random().nextDouble() * 0.4),
+              awayAttack: 1.0 + (Random().nextDouble() * 0.4),
+              awayDefense: 0.7 + (Random().nextDouble() * 0.4),
+            ));
           }
 
-          if (apiList.isNotEmpty) {
-            List<MatchPrediction> parsedMatches = [];
-            for (var item in apiList) {
-              // Extract Home / Away Team names flexibly
-              String home = item['homeTeam']?['name'] ?? 
-                            item['teams']?['home']?['name'] ?? 
-                            item['home_team'] ?? 
-                            item['home'] ?? 'Home Team';
-
-              String away = item['awayTeam']?['name'] ?? 
-                            item['teams']?['away']?['name'] ?? 
-                            item['away_team'] ?? 
-                            item['away'] ?? 'Away Team';
-
-              String league = item['league']?['name'] ?? 
-                              item['league_name'] ?? 
-                              item['competition'] ?? 'World Football';
-
-              parsedMatches.add(MatchPrediction(
-                id: item['id']?.toString() ?? item['fixture']?['id']?.toString() ?? Random().nextInt(99999).toString(),
-                league: league.toString(),
-                homeTeam: home.toString(),
-                awayTeam: away.toString(),
-                homeForm: 'W W D W L',
-                awayForm: 'D W L W W',
-                homeFormation: '4-3-3',
-                awayFormation: '4-2-3-1',
-                matchDate: DateTime.now(),
-                homeAttack: 1.1 + (Random().nextDouble() * 0.4),
-                homeDefense: 0.6 + (Random().nextDouble() * 0.4),
-                awayAttack: 1.0 + (Random().nextDouble() * 0.4),
-                awayDefense: 0.7 + (Random().nextDouble() * 0.4),
-              ));
-            }
-
-            setState(() {
-              allMatches = parsedMatches;
-              isLiveApiUsed = true;
-              isLoading = false;
-            });
-            _saveAndCleanOldData();
-            return; // Successfully loaded live matches!
-          }
+          setState(() {
+            allMatches = parsedMatches;
+            isLiveApiUsed = true;
+            isLoading = false;
+            apiLog = 'LIVE CONNECTED: Loaded ${parsedMatches.length} Matches';
+          });
+          _saveAndCleanOldData();
+          return;
+        } else {
+          apiLog = 'HTTP 200: No fixtures scheduled for today on API';
         }
-      } catch (e) {
-        debugPrint('API endpoint $urlStr failed: $e');
+      } else {
+        apiLog = 'API Error: HTTP ${response.statusCode} - ${response.body}';
       }
+    } catch (e) {
+      apiLog = 'Network Error: $e';
     }
 
-    // Fallback mode if API limits are hit or offline
     _generateFallbackPredictions();
   }
 
@@ -290,7 +267,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _saveAndCleanOldData();
   }
 
-  // 30-Day Rolling Storage Engine (Prunes day 31 back down to 30)
   Future<void> _saveAndCleanOldData() async {
     final prefs = await SharedPreferences.getInstance();
     String? storedJson = prefs.getString('saved_predictions');
@@ -334,8 +310,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Color(0xFF10B981)),
+            onPressed: _loadLiveFixtures,
+          ),
           Container(
-            margin: const EdgeInsets.only(right: 16, top: 12, bottom: 12),
+            margin: const EdgeInsets.only(right: 12, top: 12, bottom: 12),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: isLiveApiUsed ? const Color(0xFF10B981).withOpacity(0.15) : Colors.amber.withOpacity(0.15),
@@ -347,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 Icon(isLiveApiUsed ? Icons.sensors : Icons.memory, color: isLiveApiUsed ? const Color(0xFF10B981) : Colors.amber, size: 16),
                 const SizedBox(width: 4),
                 Text(
-                  isLiveApiUsed ? 'LIVE API (${allMatches.length})' : 'ENGINE MODE',
+                  isLiveApiUsed ? 'LIVE (${allMatches.length})' : 'ENGINE MODE',
                   style: TextStyle(color: isLiveApiUsed ? const Color(0xFF10B981) : Colors.amber, fontWeight: FontWeight.bold, fontSize: 11),
                 ),
               ],
@@ -366,16 +346,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF10B981)))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildMatchList(allMatches),
-                _buildMatchList(highConfidence),
-                _buildHistoryTab(),
-              ],
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            color: isLiveApiUsed ? Colors.green.withOpacity(0.2) : Colors.amber.withOpacity(0.2),
+            child: Text(
+              'DIAGNOSTIC STATUS: $apiLog',
+              style: TextStyle(fontSize: 11, color: isLiveApiUsed ? const Color(0xFF10B981) : Colors.amber, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
             ),
+          ),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF10B981)))
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildMatchList(allMatches),
+                      _buildMatchList(highConfidence),
+                      _buildHistoryTab(),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -535,7 +531,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-               'Total saved predictions: $historyCount.\nMatches older than 30 days are continuously dropped to keep a rolling 30-day log window.',
+              'Total saved predictions: $historyCount.\nMatches older than 30 days are continuously dropped to keep a rolling 30-day log window.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey, height: 1.4),
             ),
