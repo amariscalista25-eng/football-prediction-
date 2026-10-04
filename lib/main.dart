@@ -162,6 +162,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool isLiveApiUsed = false;
   String apiLog = 'Connecting to API-Sports...';
   int historyCount = 0;
+  
+  // Selected category filter
+  String selectedFilter = 'ALL';
 
   @override
   void initState() {
@@ -185,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         headers: {
           'x-apisports-key': apiKey,
         },
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -227,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           apiLog = 'HTTP 200: No fixtures scheduled for today on API';
         }
       } else {
-        apiLog = 'API Error: HTTP ${response.statusCode} - ${response.body}';
+        apiLog = 'API Error: HTTP ${response.statusCode}';
       }
     } catch (e) {
       apiLog = 'Network Error: $e';
@@ -294,6 +297,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
+  // Filter List Evaluator
+  List<MatchPrediction> _applyFilter(List<MatchPrediction> sourceList, String filter) {
+    if (filter == 'ALL') return sourceList;
+
+    return sourceList.where((m) {
+      final tip = m.bestTip;
+      if (filter == '1X2') {
+        return tip.contains('Home Win') || tip.contains('Away Win') || tip.contains('Draw (X)');
+      } else if (filter == 'OVER/UNDER') {
+        return tip.contains('Over') || tip.contains('Under');
+      } else if (filter == 'DOUBLE CHANCE') {
+        return tip.contains('1X') || tip.contains('X2') || tip.contains('Double');
+      } else if (filter == 'BTTS') {
+        return tip.contains('Both Teams');
+      }
+      return true;
+    }).toList();
+  }
+
+  int _countForCategory(List<MatchPrediction> sourceList, String filter) {
+    return _applyFilter(sourceList, filter).length;
+  }
+
   @override
   Widget build(BuildContext context) {
     List<MatchPrediction> highConfidence = allMatches.where((m) => m.confidence >= 80).toList();
@@ -339,10 +365,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           indicatorColor: const Color(0xFF10B981),
           labelColor: const Color(0xFF10B981),
           unselectedLabelColor: Colors.grey,
-          tabs: const [
-            Tab(text: "TODAY'S ALL"),
-            Tab(text: "HIGH CONFIDENCE"),
-            Tab(text: "30-DAY LOG"),
+          tabs: [
+            Tab(text: "TODAY (${allMatches.length})"),
+            Tab(text: "HIGH CONF (${highConfidence.length})"),
+            Tab(text: "30-DAY LOG ($historyCount)"),
           ],
         ),
       ),
@@ -364,8 +390,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 : TabBarView(
                     controller: _tabController,
                     children: [
-                      _buildMatchList(allMatches),
-                      _buildMatchList(highConfidence),
+                      _buildMatchListWithFilter(allMatches),
+                      _buildMatchListWithFilter(highConfidence),
                       _buildHistoryTab(),
                     ],
                   ),
@@ -375,129 +401,181 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildMatchList(List<MatchPrediction> matches) {
-    if (matches.isEmpty) {
-      return const Center(
-        child: Text('No high-confidence matches found right now.', style: TextStyle(color: Colors.grey)),
-      );
-    }
+  Widget _buildMatchListWithFilter(List<MatchPrediction> sourceList) {
+    List<MatchPrediction> filteredList = _applyFilter(sourceList, selectedFilter);
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: matches.length,
-      itemBuilder: (context, index) {
-        final m = matches[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      children: [
+        // Category Filter Row
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          color: const Color(0xFF1E293B).withOpacity(0.5),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(m.league.toUpperCase(), style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: m.confidence >= 80 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '${m.confidence}% CONFIDENCE',
-                        style: TextStyle(
-                          color: m.confidence >= 80 ? const Color(0xFF10B981) : Colors.orange,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
-                    )
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(m.homeTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          Text('Form: ${m.homeForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                          Text('Formation: ${m.homeFormation}', style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 10)),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF10B981), width: 1.5),
-                      ),
-                      child: Column(
-                        children: [
-                          const Text('PREDICTED', style: TextStyle(color: Colors.grey, fontSize: 9, fontWeight: FontWeight.bold)),
-                          Text(m.predictedScore, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(m.awayTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          Text('Form: ${m.awayForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                          Text('Formation: ${m.awayFormation}', style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 10)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-
-                const Divider(height: 24, color: Colors.white10),
-
-                Row(
-                  children: [
-                    Expanded(child: _probBadge('1 (${m.homeTeam})', '${m.homeWinProb}%', m.homeWinProb >= 50)),
-                    const SizedBox(width: 6),
-                    Expanded(child: _probBadge('X (Draw)', '${m.drawProb}%', false)),
-                    const SizedBox(width: 6),
-                    Expanded(child: _probBadge('2 (${m.awayTeam})', '${m.awayWinProb}%', m.awayWinProb >= 50)),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 18),
-                          const SizedBox(width: 6),
-                          Text('TIP: ${m.bestTip}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        ],
-                      ),
-                      Text('xG: ${m.homeXG} - ${m.awayXG}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                    ],
-                  ),
-                ),
+                _filterChip(sourceList, 'ALL', 'ALL'),
+                _filterChip(sourceList, '1X2', '1X2'),
+                _filterChip(sourceList, 'OVER/UNDER', 'O/U'),
+                _filterChip(sourceList, 'DOUBLE CHANCE', 'DC'),
+                _filterChip(sourceList, 'BTTS', 'BTTS'),
               ],
             ),
           ),
-        );
-      },
+        ),
+
+        // Matches List
+        Expanded(
+          child: filteredList.isEmpty
+              ? Center(
+                  child: Text('No $selectedFilter matches in this view.', style: const TextStyle(color: Colors.grey)),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: filteredList.length,
+                  itemBuilder: (context, index) {
+                    final m = filteredList[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(m.league.toUpperCase(), style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: m.confidence >= 80 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${m.confidence}% CONFIDENCE',
+                                    style: TextStyle(
+                                      color: m.confidence >= 80 ? const Color(0xFF10B981) : Colors.orange,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                )
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(m.homeTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      Text('Form: ${m.homeForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                                      Text('Formation: ${m.homeFormation}', style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 10)),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      const Text('PREDICTED', style: TextStyle(color: Colors.grey, fontSize: 9, fontWeight: FontWeight.bold)),
+                                      Text(m.predictedScore, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(m.awayTeam, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      Text('Form: ${m.awayForm}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                                      Text('Formation: ${m.awayFormation}', style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 10)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const Divider(height: 24, color: Colors.white10),
+
+                            Row(
+                              children: [
+                                Expanded(child: _probBadge('1 (${m.homeTeam})', '${m.homeWinProb}%', m.homeWinProb >= 50)),
+                                const SizedBox(width: 6),
+                                Expanded(child: _probBadge('X (Draw)', '${m.drawProb}%', false)),
+                                const SizedBox(width: 6),
+                                Expanded(child: _probBadge('2 (${m.awayTeam})', '${m.awayWinProb}%', m.awayWinProb >= 50)),
+                              ],
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star, color: Colors.amber, size: 18),
+                                      const SizedBox(width: 6),
+                                      Text('TIP: ${m.bestTip}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                    ],
+                                  ),
+                                  Text('xG: ${m.homeXG} - ${m.awayXG}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _filterChip(List<MatchPrediction> sourceList, String filterKey, String displayLabel) {
+    bool isSelected = selectedFilter == filterKey;
+    int count = _countForCategory(sourceList, filterKey);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: ChoiceChip(
+        label: Text('$displayLabel ($count)'),
+        selected: isSelected,
+        selectedColor: const Color(0xFF10B981),
+        backgroundColor: const Color(0xFF0F172A),
+        labelStyle: TextStyle(
+          color: isSelected ? Colors.black : Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+        onSelected: (bool selected) {
+          if (selected) {
+            setState(() {
+              selectedFilter = filterKey;
+            });
+          }
+        },
+      ),
     );
   }
 
