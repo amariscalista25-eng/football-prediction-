@@ -55,7 +55,7 @@ class ApiFootballService {
 
         if (responses.isNotEmpty) {
           // Pull up to 50 matches for today so you see the full day's list
-          return responses.take(50).map((match) {
+          return responses.map((match) {
             final fixture = match['fixture'];
             final teams = match['teams'];
             final goals = match['goals'];
