@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -26,7 +25,6 @@ class MaskyPredictionApp extends StatelessWidget {
           secondary: Color(0xFFD29922),
           error: Color(0xFFDA3633),
         ),
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
       ),
       home: const DashboardScreen(),
     );
@@ -66,7 +64,7 @@ class ApiFootballService {
             int? awayGoals = goals['away'];
 
             return MatchModel(
-              league: '${match['league']['name']} • ${match['league']['country']}',
+              league: '${match['league']['name']} •${match['league']['country']}',
               homeTeam: teams['home']['name'],
               awayTeam: teams['away']['name'],
               matchTime: DateFormat('hh:mm a').format(DateTime.parse(fixture['date']).toLocal()),
@@ -74,7 +72,6 @@ class ApiFootballService {
               statusShort: statusShort,
               homeScore: homeGoals,
               awayScore: awayGoals,
-              // AI Smart Picks assigned based on match profile
               pick1X2: _determine1X2Pick(teams['home']['name'], teams['away']['name']),
               pickDC: _determineDCPick(teams['home']['name'], teams['away']['name']),
               analysisReason: 'Common opponent metrics & venue pressure analyzed via API live feed.',
@@ -87,7 +84,7 @@ class ApiFootballService {
       debugPrint('API Error: $e');
     }
 
-    // Fallback Mock Matches (e.g., J2 League matchup we analyzed)
+    // Fallback Mock Matches
     return [
       MatchModel(
         league: 'J2 LEAGUE • JAPAN',
@@ -121,7 +118,6 @@ class ApiFootballService {
   }
 
   static String _determine1X2Pick(String home, String away) {
-    // Smart heuristic for 1X2 (including value draws)
     int hash = (home.hashCode + away.hashCode) % 3;
     if (hash == 0) return 'X (Draw)';
     if (hash == 1) return '1 (Home Win)';
@@ -157,15 +153,14 @@ class MatchModel {
   final String awayTeam;
   final String matchTime;
   final String venue;
-  final String statusShort; // 'NS', '1H', 'HT', '2H', 'FT', etc.
+  final String statusShort;
   final int? homeScore;
   final int? awayScore;
-  final String pick1X2; // e.g. '1 (Home Win)', 'X (Draw)', '2 (Away Win)'
-  final String pickDC;  // e.g. '1X', '2X', '12'
+  final String pick1X2;
+  final String pickDC;
   final String analysisReason;
   final String h2hContext;
 
-  // Settlement Checker for 1X2
   bool? get is1X2Won {
     if (statusShort != 'FT' || homeScore == null || awayScore == null) return null;
     int h = homeScore!;
@@ -176,7 +171,6 @@ class MatchModel {
     return false;
   }
 
-  // Settlement Checker for Double Chance
   bool? get isDCWon {
     if (statusShort != 'FT' || homeScore == null || awayScore == null) return null;
     int h = homeScore!;
@@ -284,9 +278,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           return TabBarView(
             controller: _tabController,
             children: [
-              // Tab 1: 1X2 Market Predictions
               MatchListView(matches: matches, isDoubleChanceTab: false),
-              // Tab 2: Double Chance Market Predictions
               MatchListView(matches: matches, isDoubleChanceTab: true),
             ],
           );
@@ -322,9 +314,6 @@ class PredictionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine status badge display
-    String statusLabel = match.statusShort;
-    Color statusColor = Colors.grey;
     bool? isWon = isDoubleChanceTab ? match.isDCWon : match.is1X2Won;
 
     Widget statusBadge;
@@ -349,7 +338,6 @@ class PredictionCard extends StatelessWidget {
         );
       }
     } else {
-      // Live or in-progress match
       statusBadge = Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(color: const Color(0xFFD29922).withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
@@ -369,7 +357,6 @@ class PredictionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header League, Time & Status
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: const BoxDecoration(
@@ -399,8 +386,6 @@ class PredictionCard extends StatelessWidget {
               ],
             ),
           ),
-          
-          // Match Teams & Score Display
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -446,8 +431,6 @@ class PredictionCard extends StatelessWidget {
                   ],
                 ),
                 const Divider(height: 24, color: Color(0xFF30363D)),
-
-                // Selection & Market Badge
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -477,8 +460,6 @@ class PredictionCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 14),
-
-                // Analysis Reason Box
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
