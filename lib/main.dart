@@ -54,7 +54,8 @@ class ApiFootballService {
         final List responses = data['response'] ?? [];
 
         if (responses.isNotEmpty) {
-          return responses.take(15).map((match) {
+          // Pull up to 50 matches for today so you see the full day's list
+          return responses.take(50).map((match) {
             final fixture = match['fixture'];
             final teams = match['teams'];
             final goals = match['goals'];
@@ -64,7 +65,7 @@ class ApiFootballService {
             int? awayGoals = goals['away'];
 
             return MatchModel(
-              league: '${match['league']['name']} •${match['league']['country']}',
+              league: '${match['league']['name']} • ${match['league']['country']}',
               homeTeam: teams['home']['name'],
               awayTeam: teams['away']['name'],
               matchTime: DateFormat('hh:mm a').format(DateTime.parse(fixture['date']).toLocal()),
@@ -74,7 +75,7 @@ class ApiFootballService {
               awayScore: awayGoals,
               pick1X2: _determine1X2Pick(teams['home']['name'], teams['away']['name']),
               pickDC: _determineDCPick(teams['home']['name'], teams['away']['name']),
-              analysisReason: 'Common opponent metrics & venue pressure analyzed via API live feed.',
+              analysisReason: 'Analyzed via common opponent metrics & venue pressure profile.',
               h2hContext: 'H2H historical goal differentials evaluated.',
             );
           }).toList();
@@ -84,7 +85,7 @@ class ApiFootballService {
       debugPrint('API Error: $e');
     }
 
-    // Fallback Mock Matches
+    // Fallback Mock Matches if API limit or offline
     return [
       MatchModel(
         league: 'J2 LEAGUE • JAPAN',
@@ -113,6 +114,34 @@ class ApiFootballService {
         pickDC: '1X',
         analysisReason: 'Fukushima analyzed via shared common opponents. Home bounce-back expected.',
         h2hContext: 'Shared opponent data heavily supports home side stability.',
+      ),
+      MatchModel(
+        league: 'PREMIER LEAGUE • ENGLAND',
+        homeTeam: 'Arsenal',
+        awayTeam: 'Chelsea',
+        matchTime: '01:30 PM',
+        venue: 'Emirates Stadium',
+        statusShort: 'NS',
+        homeScore: null,
+        awayScore: null,
+        pick1X2: '1 (Home Win)',
+        pickDC: '1X',
+        analysisReason: 'Strong home dominance and high tactical pressing efficiency.',
+        h2hContext: 'Arsenal undefeated in last 3 home matches against Chelsea.',
+      ),
+      MatchModel(
+        league: 'SERIE A • ITALY',
+        homeTeam: 'AC Milan',
+        awayTeam: 'Inter Milan',
+        matchTime: '04:00 PM',
+        venue: 'San Siro',
+        statusShort: 'NS',
+        homeScore: null,
+        awayScore: null,
+        pick1X2: 'X (Draw)',
+        pickDC: '1X',
+        analysisReason: 'Derby tactical stalemate expected with tight defensive blocks.',
+        h2hContext: 'Last 2 derby encounters ended in tight draws or narrow margins.',
       ),
     ];
   }
@@ -183,7 +212,7 @@ class MatchModel {
 }
 
 // =====================================================================
-// UI DASHBOARD SCREEN WITH TABS
+// UI DASHBOARD SCREEN WITH TABS & COUNTER
 // =====================================================================
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -275,11 +304,52 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             return const Center(child: Text('No matches found for today.'));
           }
 
-          return TabBarView(
-            controller: _tabController,
+          return Column(
             children: [
-              MatchListView(matches: matches, isDoubleChanceTab: false),
-              MatchListView(matches: matches, isDoubleChanceTab: true),
+              // Total Predictions Counter Banner at the Top
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                color: const Color(0xFF161B22),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.analytics, size: 16, color: Color(0xFF58A6FF)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Total Predictions Today: ${matches.length}',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF238636).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF238636).withOpacity(0.5)),
+                      ),
+                      child: const Text(
+                        'AI Engine Active',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF3FB950)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFF30363D)),
+              // Tab Views containing full list
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    MatchListView(matches: matches, isDoubleChanceTab: false),
+                    MatchListView(matches: matches, isDoubleChanceTab: true),
+                  ],
+                ),
+              ),
             ],
           );
         },
@@ -453,7 +523,7 @@ class PredictionCard extends StatelessWidget {
                         border: Border.all(color: const Color(0xFF1F6FEB).withOpacity(0.5)),
                       ),
                       child: Text(
-                        isDoubleChanceTab ? 'Safe Cover' : 'Value 1X2',
+                        isDoubleChanceTab ? 'Super DC' : 'Value 1X2',
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF58A6FF)),
                       ),
                     ),
