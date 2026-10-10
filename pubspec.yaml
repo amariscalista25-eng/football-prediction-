@@ -1,7 +1,6 @@
 name: masky_football_prediction
-description: "AI Football Prediction App built with Flutter."
+description: Advanced football prediction engine based on common opponents and match context.
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
@@ -10,9 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  shared_preferences: ^2.2.3
   http: ^1.2.0
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
@@ -21,4 +19,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  
